@@ -64,8 +64,10 @@
       //  any js below is needed for it to work.
       //  tinker at your own risk
       // ==================
-      const changeStart = () => {
+      const changeStart = async() => {
         startTime = document.getElementById("starttime").value;
+        await localforage.setItem("starttime", startTime);
+
       }
       async function verifyPermission(fileHandle) {
         const options = {
