@@ -20,7 +20,7 @@
         <div><br /></div>
         <div class="input-group mb-3 w-50">
           <span class="input-group-text">Start time:</span>
-          <input disabled type="datetime-local" id="starttime" />
+          <input onchange="changeStart()" type="datetime-local" id="starttime" />
         </div>
         <div class="input-group mb-3 w-50">
           <span class="input-group-text">Description:</span>
@@ -64,7 +64,9 @@
       //  any js below is needed for it to work.
       //  tinker at your own risk
       // ==================
-
+      const changeStart = () => {
+        startTime = document.getElementById("starttime").value;
+      }
       async function verifyPermission(fileHandle) {
         const options = {
           mode: "readwrite",
