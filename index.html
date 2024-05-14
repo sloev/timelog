@@ -1,0 +1,238 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+      integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC"
+      crossorigin="anonymous"
+    />
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
+  </head>
+  <body>
+    <div>
+      <button class="btn btn-primary" id="new">new work log</button>
+      <button class="btn btn-success" id="new">new recreation log</button>
+      <button class="btn btn-warning" id="new">new vacation log</button>
+
+      <div id="form" style="display: none">
+        <div><br /></div>
+        <div class="input-group mb-3 w-50">
+          <span class="input-group-text">Start time:</span>
+          <input disabled type="datetime-local" id="starttime" />
+        </div>
+        <div class="input-group mb-3 w-50">
+          <span class="input-group-text">Description:</span>
+
+          <textarea class="form-control" id="description"></textarea>
+        </div>
+
+        <button class="btn btn-success" id="save">end</button>
+        <button class="btn btn-danger" id="discard">discard</button>
+      </div>
+      <div>
+        <table class="table">
+          <thead>
+            <tr>
+              <th scope="col">start</th>
+              <th scope="col">end</th>
+              <th scope="col">description</th>
+            </tr>
+          </thead>
+          <tbody id="items"></tbody>
+        </table>
+      </div>
+    </div>
+    <button
+      class="btn btn-success"
+      style="height: 100%; width: 100%; position: absolute; z-index: 10; top: 0"
+      id="load"
+    >
+      load
+    </button>
+
+    <script>
+      let data = { logs: [] };
+      let logType;
+      let fileHandle;
+      let startTime;
+      let description;
+      let typetoclass = {"log":"primary", "holliday": "warning", "recreation": "success"}
+
+      // ==================
+      //  any js below is needed for it to work.
+      //  tinker at your own risk
+      // ==================
+
+      async function verifyPermission(fileHandle) {
+        const options = {
+          mode: "readwrite",
+        };
+        let isPermit = false;
+
+        // Check if permission was already granted. If so, return true.
+        if ((await fileHandle.queryPermission(options)) === "granted") {
+          isPermit = true;
+        }
+        if ((await fileHandle.requestPermission(options)) === "granted") {
+          isPermit = true;
+        }
+        return isPermit;
+      }
+      // This works on all devices/browsers, and uses IndexedDBShim as a final fallback
+
+      window.addEventListener("load", function () {
+        let load = document.getElementById("load");
+        let descriptionField = document.getElementById("description");
+        let newButton = document.getElementById("new");
+        let items = document.getElementById("items");
+        let startField = document.getElementById("starttime");
+        let saveButton = document.getElementById("save");
+        let discardButton = document.getElementById("discard");
+        let form = document.getElementById("form");
+
+        const render = () => {
+          items.innerHTML = "";
+          let days = [];
+          days.push(...data.logs);
+          days.push(...data.hollidays);
+          days.sort(function (a, b) {
+            return Date.parse(b.start) - Date.parse(a.start);
+          });
+
+          days.map((v) => {
+            let el = document.createElement("tr");
+            el.classList.add(`table-${typetoclass[v.type]}`);
+
+            el.innerHTML = `
+            <td scope="row">${v.start.replace("T", "   ")}</td>
+            <td>${v.end.replace("T", "   ")}</td>
+            <td>${v.description}</td>
+        `;
+            items.appendChild(el);
+          });
+        };
+
+        load.addEventListener("click", async () => {
+          load.style.display = "none";
+          // Destructure the one-element array.
+
+          startTime = await localforage.getItem("starttime");
+          if (!!startTime) {
+            form.style.display = "block";
+          }
+          startField.value = startTime;
+          fileHandle = await localforage.getItem("filehandle");
+
+          if (!!fileHandle) {
+            let perms = await verifyPermission(fileHandle);
+            if (!perms) {
+              fileHandle = null;
+            }
+          }
+          if (!fileHandle) {
+            let something = await window.showOpenFilePicker({
+              startIn: "documents",
+              id: "timelog",
+            });
+            // Do something with the file handle.
+            fileHandle = something[0];
+
+            await localforage.setItem("filehandle", fileHandle);
+          }
+
+          const file = await fileHandle.getFile();
+          const contents = (await file.text()) || '{"logs":[]}';
+
+          data = JSON.parse(contents);
+          if (!data.hollidays) {
+            data.hollidays = [];
+            fetch(
+              `https://date.nager.at/api/v3/publicholidays/${new Date().getFullYear()}/DK`
+            )
+              .then((res) => res.json())
+              .then((json) => {
+                json.map((d) => {
+                  data.hollidays.push({
+                    start: d.date + "T00:00:01",
+                    end: d.date + "T23:59:59",
+                    description:"holiday",
+                    type:"holliday"
+                  });
+                });
+                console.log(data);
+                render()
+              });
+          }
+          render();
+          console.log("loaded data:", data);
+        });
+
+        newButton.addEventListener("click", async () => {
+          if (!!startTime) {
+            if (!confirm("sure you wanna delete current log?")) {
+              return;
+            }
+          }
+          startTime = new Date().toLocaleString("sv").replace(" ", "T");
+          startField.value = startTime;
+          await localforage.setItem("starttime", startTime);
+          form.style.display = "block";
+        });
+        saveButton.addEventListener("click", async () => {
+          if (!descriptionField.value.length) {
+            alert("remember description!!!");
+            return;
+          }
+          let endTime = new Date().toLocaleString("sv").replace(" ", "T");
+
+          data.logs.push({
+            description: descriptionField.value,
+            start: startTime,
+            end: endTime,
+            type:"log"
+          });
+          descriptionField.value = null;
+          startField.value = null;
+          startTime = null;
+          await localforage.setItem("starttime", startTime);
+          form.style.display = "none";
+          console.log(data);
+          render();
+          await writeFile(fileHandle, JSON.stringify(data));
+        });
+        discardButton.addEventListener("click", async () => {
+          descriptionField.value = null;
+          startField.value = null;
+          startTime = null;
+          await localforage.setItem("starttime", startTime);
+          form.style.display = "none";
+        });
+
+        // ==================
+      });
+
+      async function writeFile(fileHandle, contents) {
+        // Support for Chrome 82 and earlier.
+        if (fileHandle.createWriter) {
+          // Create a writer (request permission if necessary).
+          const writer = await fileHandle.createWriter();
+          // Write the full length of the contents
+          await writer.write(0, contents);
+          // Close the file and write the contents to disk
+          await writer.close();
+          return;
+        }
+        // For Chrome 83 and later.
+        // Create a FileSystemWritableFileStream to write to.
+        const writable = await fileHandle.createWritable();
+        // Write the contents of the file to the stream.
+        await writable.write(contents);
+        // Close the file and write the contents to disk.
+        await writable.close();
+        //reload
+      }
+    </script>
+  </body>
+</html>
